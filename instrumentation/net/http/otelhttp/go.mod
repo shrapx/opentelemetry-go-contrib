@@ -7,6 +7,7 @@ replace go.opentelemetry.io/contrib => ../../../..
 require (
 	github.com/felixge/httpsnoop v1.0.1
 	github.com/stretchr/testify v1.6.1
+	github.com/vektah/gqlparser/v2 v2.1.0 // indirect
 	go.opentelemetry.io/contrib v0.15.1
 	go.opentelemetry.io/otel v0.15.0
 )

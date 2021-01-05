@@ -26,6 +26,18 @@ import (
 
 const (
 	instrumentationName = "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+
+	MetricNameOkRate       = "http.ok_rate"
+	MetricNameLatency      = "http.latency"
+
+	LabelHTTPHost        = "host"
+	LabelHTTPMethod      = "method"
+	LabelHTTPPath        = "path"
+	LabelHTTPStatusCode  = "status_code"
+	LabelAMZTarget       = "amz-target" // X-Amz-Target
+	LabelGQLName         = "graphql_name"
+	LabelGQLType         = "graphql_type"
+	LabelParsedErrorCode = "error_code"
 )
 
 // config represents the configuration options available for the http.Handler
@@ -42,6 +54,11 @@ type config struct {
 
 	TracerProvider trace.TracerProvider
 	MeterProvider  metric.MeterProvider
+
+	WithOkRate       bool
+	WithLatency      bool
+	OkRate           metric.Int64ValueRecorder
+	Latency          metric.Int64ValueRecorder
 }
 
 // Option Interface used for setting *optional* config properties
@@ -77,6 +94,12 @@ func newConfig(opts ...Option) *config {
 		metric.WithInstrumentationVersion(contrib.SemVersion()),
 	)
 
+	if c.WithOkRate {
+		c.OkRate, _ = c.Meter.NewInt64ValueRecorder(MetricNameOkRate)
+	}
+	if c.WithLatency {
+		c.Latency, _ = c.Meter.NewInt64ValueRecorder(MetricNameLatency)
+	}
 	return c
 }
 
@@ -168,5 +191,12 @@ func WithMessageEvents(events ...event) Option {
 func WithSpanNameFormatter(f func(operation string, r *http.Request) string) Option {
 	return OptionFunc(func(c *config) {
 		c.SpanNameFormatter = f
+	})
+}
+
+func WithBasicMetrics() Option {
+	return OptionFunc(func(c *config) {
+		c.WithOkRate = true
+		c.WithLatency = true
 	})
 }
