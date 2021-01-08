@@ -18,15 +18,15 @@ package otelgin
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
+	otelcontrib "go.opentelemetry.io/contrib"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
-
-	otelcontrib "go.opentelemetry.io/contrib"
-
 	"go.opentelemetry.io/otel/label"
+	otelmetric "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/semconv"
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
@@ -51,11 +51,30 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		tracerName,
 		oteltrace.WithInstrumentationVersion(otelcontrib.SemVersion()),
 	)
+	if cfg.MeterProvider == nil {
+		cfg.MeterProvider = otel.GetMeterProvider()
+	}
+	meter := cfg.MeterProvider.Meter(
+		meterName,
+		otelmetric.WithInstrumentationVersion(otelcontrib.SemVersion()),
+	)
 	if cfg.Propagators == nil {
 		cfg.Propagators = otel.GetTextMapPropagator()
 	}
+
+	var latency, okRate *otelmetric.Int64ValueRecorder
+	meterLatency, err := meter.NewInt64ValueRecorder("Latency")
+	if err == nil {
+		latency = &meterLatency
+	}
+	meterOkRate, err := meter.NewInt64ValueRecorder("OkRate")
+	if err == nil {
+		okRate = &meterOkRate
+	}
+
 	return func(c *gin.Context) {
 		c.Set(tracerKey, tracer)
+		c.Set(meterKey, meter)
 		savedCtx := c.Request.Context()
 		defer func() {
 			c.Request = c.Request.WithContext(savedCtx)
@@ -77,16 +96,33 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		// pass the span through the request context
 		c.Request = c.Request.WithContext(ctx)
 
+		startTime := time.Now()
+
 		// serve the request to the next middleware
 		c.Next()
+
+		endTime := time.Now()
+
+		var labels []label.KeyValue
+		labels = append(labels, extractRequestLabels(c.Request)...)
+
+		setMetricLatency(ctx, latency, endTime.Sub(startTime), labels...)
 
 		status := c.Writer.Status()
 		attrs := semconv.HTTPAttributesFromHTTPStatusCode(status)
 		spanStatus, spanMessage := semconv.SpanStatusFromHTTPStatusCode(status)
 		span.SetAttributes(attrs...)
 		span.SetStatus(spanStatus, spanMessage)
+
+		// if status is 200, but errors exist, extract more descriptive error codes from c.Error
+		labels = append(labels, label.String("Code", fmt.Sprintf("%v", status)))
+
 		if len(c.Errors) > 0 {
 			span.SetAttributes(label.String("gin.errors", c.Errors.String()))
+			setMetricOkRate(ctx, okRate, 0, labels...)
+		} else {
+
+			setMetricOkRate(ctx, okRate, 1, labels...)
 		}
 	}
 }

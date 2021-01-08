@@ -17,12 +17,14 @@
 package otelgin
 
 import (
+	otelmetric "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 type config struct {
 	TracerProvider oteltrace.TracerProvider
+	MeterProvider  otelmetric.MeterProvider
 	Propagators    propagation.TextMapPropagator
 }
 
